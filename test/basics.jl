@@ -120,7 +120,7 @@ end
 
 using BenchmarkTools
 
-println("@btime bench($sv): some work on an ordinary struct, in a loop on a Vector to get stable timings")
+println("@btime bench(sv): some work on an ordinary struct, in a loop on a Vector to get stable timings")
 
 @btime bench($sv)
 
