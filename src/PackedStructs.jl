@@ -86,7 +86,7 @@ return a bit mask to restrict to the lowest *bits* bits of an UInt64.
 extract a bitfield from a packed struct.
 If pstruct is interpreted as a bit vector, it returns pstruct[shift+1:shift+bits] 
 """
-@inline _get(pstruct::UInt64,shift,bits) = (pstruct>>>shift) & _mask(bits)
+@inline _get(pstruct::UInt64, shift, bits) = (pstruct>>>shift) & _mask(bits)
 
 # this variant might give better code (guaranteed constant propagation)
 @inline _get(pstruct::UInt64, ::Val{shift},::Val{bits}) where {shift,bits} = (pstruct>>>shift) & _mask(bits)
@@ -179,13 +179,13 @@ If S is not found, (Nothing,0,0) is returned.
 
 dispatch could (should) generate a constant tuple as method body.
 """
-@inline function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+@Base.pure function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
     shift = 0
     types = T.parameters[2].parameters
     syms = T.parameters[1]
     idx = 1
     while idx <= length(syms)
-        type = types[idx] # type annotation should be unnecessary - compiler knows structure of T
+        type = types[idx]
         bits = bitsizeof(type)
         if syms[idx]===s
             return type,shift, bits
@@ -195,36 +195,13 @@ dispatch could (should) generate a constant tuple as method body.
     end
     # symbol not found - clearly an error. what to do to keep method pure and type-stable?
     #variant 1: throw an exception. Is that type stable?!!
-    #throw(ArgumentError(s))
+    throw(ArgumentError(s))
     #variant 2: type stable default answer - needs further treatment in caller.
-    return Nothing,0,0 
-    
+    # return Nothing,0,0 
 end
 
 
-# first try: a generic, but slow implementation
-Base.@pure function getpropertyV0(x::PStruct{T},s::Symbol) where T<:NamedTuple
-    @inbounds begin
-        types = Tuple(T.parameters[2].parameters)  # compiler could infer it is a NTuple{N,DataType}
-        syms = T.parameters[1]  # compiler could infer it is a NTuple{N,Symbol}
-        idx = 1
-        shift = 0
-        while idx <= length(syms)
-            type = types[idx]
-            bits = bitsizeof(type)
-            if syms[idx]===s
-                v = _get(reinterpret(UInt64,x),Val(shift),Val(bits))
-                return _convert(type,v)
-            end
-            shift += bits
-            idx += 1
-        end
-        throw(ArgumentError(s))
-    end
-end
-
-
-Base.@pure @inline function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
+Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
     @inbounds begin
         shift = 0
         types = T.parameters[2].parameters
@@ -243,6 +220,14 @@ Base.@pure @inline function Base.getproperty(x::PStruct{T},s::Symbol) where T<:N
         throw(ArgumentError(s))
     end
 end
+
+
+# better than getproperty but still slow
+@inline Base.@pure function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+export getpropertyV2
 
 
 # first try: constructor setting some fields. TODO redesign using helper methods
@@ -319,13 +304,6 @@ end
     return type(v)
 end
 
-
-# better than getproperty but still slow
-@inline Base.@pure function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
-    type,shift,bits = _fielddescr(PStruct{T},Val(s))
-    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
-end
-export getpropertyV2
 
 #= WIP - plz ignore
 Base.@pure function _fielddescrV3(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol

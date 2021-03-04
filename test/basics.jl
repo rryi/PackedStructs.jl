@@ -57,7 +57,7 @@ end
 
 
 
-# hand-coded for type PS using convert
+# _fielddescr call replaced in getpropertiesV2 by ins result, for type PS
 import PackedStructs: _get, _convert
 
 function getpropertyV3(ps, ::Val{:i1})
@@ -92,7 +92,7 @@ end
 
 
 
-# hand-coded for type PS what is done in the convert call
+# hand-coded bare metal for type PS: drilldown to elementary shift, and operation, omitting final type conversion
 function getpropertyV4(ps, ::Val{:i1})
     reinterpret(UInt64,ps)>>2 & 0x3F
 end
@@ -137,7 +137,7 @@ println("@btime bench(psv): same work on PStruct having same fields as struct in
 println("@btime benchV2(psv): same work, but using getpropertyV2 instead of getproperty for PStruct field access")
 @btime benchV2($psv)
 
-println("@btime benchV3(psv): same work, but handcoded getpropertyV3 using utilities  instead of getpropertyV2 for PStruct field access")
+println("@btime benchV3(psv): same work, but handcoded getpropertyV3 replacing _fielddescr call by its result (simulated constant propagation)")
 @btime benchV3($psv)
 
 println("@btime benchV4(psv): same work, but handcoded getpropertyV4 with resulting SHIFT and AND operation")
@@ -154,3 +154,20 @@ nv = (f1=false,f2=1,i1=1%UInt64,i2=2%Int64,i3=0x3,i4=4%Int8,u16=0x0123,i16=2345%
 ps = PS(nv)
 
 show(ps)
+
+b1(str::PS)= str.i16
+b2(str::PS)= getpropertyV2(str, :i16)
+b3(str::PS)= getpropertyV3(str, Val(:i16))
+b4(str::PS)= getpropertyV4(str, Val(:i16))
+@btime (b1($ps))
+@btime (b2($ps))
+@btime (b3($ps))
+@btime (b4($ps))
+
+
+
+#@code_native(getproperty(ps,:i16)) # quite long
+
+#@code_native(PackedStructs._fielddescr(PS,Val(:i16))) # quite long
+
+
