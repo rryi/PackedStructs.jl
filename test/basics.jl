@@ -27,10 +27,11 @@ struct S
     i16::Int16
 end
 
-psv = Vector{PS}(undef, 1000)
+psv = Vector{PS}(undef, 100)
 
-sv =  Vector{S}(undef, 1000)
+sv =  Vector{S}(undef, 100)
 for i in 1:length(psv)
+    local ps
     ps = psv[i]
     sv[i] = S(ps.f1,ps.f2,ps.i1,ps.i2,ps.i3,ps.i4,ps.u16,ps.i16)
 end
@@ -116,17 +117,23 @@ end
 
 
 
+
 using BenchmarkTools
 
+println("@btime bench($sv): some work on an ordinary struct, in a loop on a Vector to get stable timings")
 
 @btime bench($sv)
 
+println("@btime bench(psv): same work on PStruct having same fields as struct in preceding benchmark")
 @btime bench($psv)
 
+println("@btime benchV2(psv): same work, but using getpropertyV2 instead of getproperty for PStruct field access")
 @btime benchV2($psv)
 
+println("@btime benchV3(psv): same work, but handcoded getpropertyV3 using utilities  instead of getpropertyV2 for PStruct field access")
 @btime benchV3($psv)
 
+println("@btime benchV4(psv): same work, but handcoded getpropertyV4 with resulting SHIFT and AND operation")
 @btime benchV4($psv)
 
 
@@ -139,3 +146,4 @@ nv = (f1=false,f2=1,i1=1%UInt64,i2=2%Int64,i3=0x3,i4=4%Int8,u16=0x0123,i16=2345%
 
 ps = PS(nv)
 
+show(ps)

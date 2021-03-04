@@ -97,6 +97,9 @@ If pstruct is interpreted as a bit vector, it returns pstruct[shift+1:shift+bits
 
 set a bitfield in a packed struct.
 If pstruct and value are interpreted as bit vector, it performs pstruct[shift+1:shift+bits] = value[1..bits]
+
+Boundscheck tests if only the lowest *bits* bits are set in value. 
+This is guaranteed by _convert(UInt64,bits,...).
 """
 @inline function _set(pstruct::UInt64,::Val{shift},::Val{bits}, value::UInt64) where {shift, bits}
     v = value & _mask(bits)
@@ -141,7 +144,15 @@ _convert(::Type{type},v::UInt64)            where type<:Enum    = type(v-typemin
 
 # conversions from external property type to bitfield
 
-_convert(::Type{UInt64},bits, v::T)         where T             = _convert(UInt64,bits,convert(UInt64,v) # default
+"""
+_convert(::Type{UInt64}, bits, x::T)
+
+convert from a value of type T to a bitfield in a PStruct, with bounds check (does result fit in *bits* bits)
+
+This function inverts _convert(::Type{T},ps::UInt64). bits is the important part of the target type 
+and necessary for bounds checks 
+"""
+_convert(::Type{UInt64},bits, v::T)         where T             = _convert(UInt64,bits,convert(UInt64,v)) # default
 
 @inline function _convert(::Type{UInt64},bits,v::T) where T<:Unsigned   
     @boundscheck v > _mask(bits) && throw(BoundsError(v))
@@ -150,11 +161,11 @@ end
 
 @inline function _convert(::Type{UInt64},bits,v::T) where T<:Signed     
     @boundscheck ( v < -1<<(bits-1) || v>= 1<<(bits-1) ) &&  throw(BoundsError(v))
-    return v % UInt64
+    return (v % UInt64)&_mask(bits)
 end
 
 @inline function _convert(::Type{UInt64},bits,v::T) where T<:Enum     
-    u = (Int(v)+Int(typemin(T))%UInt64
+    u = (Int(v)+Int(typemin(T)))%UInt64
     @boundscheck u > _mask(bits)  &&  throw(BoundsError(v))
     return u % UInt64
 end
@@ -202,7 +213,7 @@ Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTupl
             type = types[idx]
             bits = bitsizeof(type)
             if syms[idx]===s
-                v = _get(Val(shift),Val(bits),reinterpret(UInt64,x))
+                v = _get(reinterpret(UInt64,x),Val(shift),Val(bits))
                 return _convert(type,v)
             end
             shift += bits
@@ -213,7 +224,7 @@ Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTupl
 end
 
 
-# first try: constructor setting some fields
+# first try: constructor setting some fields. TODO redesign using helper methods
 "constructor setting some fields, fields not included in nt stay 0"
 function PStruct{T}(nt::NT) where {T<:NamedTuple, NT <: NamedTuple}
     ret = zero(UInt64)
@@ -244,45 +255,15 @@ end
 
 
 function Base.show(x::PStruct{T}) where T<:NamedTuple
-    println(PStruct{T}, ' ',x%UInt64)
+    ps = reinterpret(UInt64,x)
+    println(PStruct{T}, ' ',repr(ps))
     types = Tuple(T.parameters[2].parameters)
     syms = T.parameters[1]
-    while s in syms
+    for s in syms
         t,shift, bits = _fielddescr(PStruct{T},Val(s))
-        v = x>>shift & _mask(bits)
-        println("  ",s, "::",t, " = ",v)
-        idx += 1
+        println("  ",s, "::",t, " = ",repr(_convert(t,_get(ps,shift,bits))))
     end
     println("end")
-end
-
-
-"constructor setting some fields, fields not included in nt stay 0"
-function set(x::PStruct{T};kwargs...) where {T<:NamedTuple}
-    ret = zero(UInt64)
-    for p in kwargs
-        s = p.first
-        t,shift, bits = fielddescr(PStruct{T},Val(s))
-        v = _convert(UInt64,bits,p.second)
-        x = _set(Val(shift),Val(bits),x,v)
-        local v::UInt64
-        if t <: Union{PUInt,Unsigned} 
-            v = UInt64(nt[idx])
-            v >= (1<<bits) && error("overflow for type $t with $bits bits: value $v")
-        end
-        if t <: Union{PInt,Signed,Bool} 
-            iv = Int64(nt[idx])
-            (iv < -(1<<(bits-1)) || iv>= (1<<(bits-1)) ) && error("overflow for type $t with $bits bits: value $v")
-            v = (iv%UInt64) & (1<<bits - 1)
-        end
-        if t <: Enum
-            v = (Int(nt[idx])+typemin(t))%UInt64
-            v >= (1<<bits) && error("overflow for type $t with $bits bits: value $v")
-        end
-        ret |= (v<<shift)
-        idx += 1
-    end
-    return reinterpret(PStruct{T},ret)
 end
 
 
@@ -291,18 +272,23 @@ end
 
 replace a selection of fields given by named parameters.
 parameter names in args must match properties of ps, 
-and values in args must be convertable to Int or UInt
-
+and there must be a method _convert(UInt64,bits,v) for any value v in kwargs.
 """
-function set(ps::PStruct{T};kwargs...)
+function set(x::PStruct{T};kwargs...) where {T<:NamedTuple}
+    ret = reinterpret(UInt64,x)
     for p in kwargs
-        t,shift, bits = fielddescr(PStruct{T},Val(p.first))
-
-
-
+        s = p.first
+        t,shift, bits = _fielddescr(PStruct{T},Val(s))
+        v = _convert(UInt64,bits,p.second)
+        ret = _set(Val(shift),Val(bits),ret,v)
+        ret |= (v<<shift)
+    end
+    return reinterpret(PStruct{T},ret)
 end
 
-# seems like compiler does optimize this 
+
+
+# DEPRECATED use _convert . But: seems like compiler does optimize this 
 @inline @Base.pure function Base.convert(::Type{type},::Val{shift},::Val{bits},x::UInt64) where {type,shift,bits}
     v = (x >>> shift) & (one(UInt64)<<bits - one(UInt64))
     type <: PUInt && return v
@@ -313,12 +299,86 @@ end
 end
 
 
-# compiler does not 
+# better than getproperty but still slow
 @inline Base.@pure function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
-    type,shift,bits = fielddescr(PStruct{T},Val(s))
-    return convert(type,Val(shift),Val(bits),reinterpret(UInt64,x))
+    type,shift,bits = _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
 end
 export getpropertyV2
+
+#= WIP - plz ignore
+Base.@pure function _fielddescrV3(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+    shift = 0
+    types = T.parameters[2].parameters
+    syms = T.parameters[1]
+    idx = = 
+    while idx <= length(syms)
+        type :: DataType = types[idx] # type annotation should be unnecessary - compiler knows structure of T
+        bits = bitsizeof(type)
+        if syms[idx]===s
+            return type,shift, bits
+        end
+        shift += bits
+        idx += 1
+    end
+    # symbol not found - clearly an error. what to do to keep method pure and type-stable?
+    throw(ArgumentError(s))
+    #variant 1: type stable default answer - needs further treatment in caller.
+    return Nothing,0,0 # is dead code if compiler recognizes throw as some form of return
+    #variant 2: throw an exception. Is that type stable?!!
+    #throw(ErrorException("symbol $S not found in $T"))
+end
+
+
+@inline Base.@pure function getpropertyV3(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = _fielddescrV3(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+export getpropertyV3
+
+
+
+
+Base.@pure function _descrkernel(::Type{T},s::Symbol) where T <: NTuple{N,Datatype}
+    if N>0
+        if s == ? hasfield
+
+
+            function fieldindex(T::DataType, name::Symbol, err::Bool=true)
+                return Int(ccall(:jl_field_index, Cint, (Any, Any, Cint), T, name, err)+1)
+            end
+
+Base.@pure function _fielddescrV2(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+    shift = 0
+    types = Tuple(T.parameters[2].parameters)
+    syms = T.parameters[1]
+    idx = 1
+    while idx <= length(syms)
+        type :: DataType = types[idx] # type annotation should be unnecessary - compiler knows structure of T
+        bits = bitsizeof(type)
+        if syms[idx]===s
+            return type,shift, bits
+        end
+        shift += bits
+        idx += 1
+    end
+    # symbol not found - clearly an error. what to do to keep method pure and type-stable?
+    throw(ArgumentError(s))
+    #variant 1: type stable default answer - needs further treatment in caller.
+    return Nothing,0,0 # is dead code if compiler recognizes throw as some form of return
+    #variant 2: throw an exception. Is that type stable?!!
+    #throw(ErrorException("symbol $S not found in $T"))
+end
+
+
+# compiler does not 
+@inline Base.@pure function getpropertyV3(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = _fielddescrV3(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+=#
+
+
 
 
 end # module
