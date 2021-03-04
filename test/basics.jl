@@ -56,21 +56,28 @@ function benchV2(vec::Vector{PS}) where PS <: PStruct
 end
 
 
+
 # hand-coded for type PS using convert
+import PackedStructs: _get, _convert
+
 function getpropertyV3(ps, ::Val{:i1})
-    convert(PUInt{6},Val(2),Val(6),reinterpret(UInt64,ps))
+    type,shift,bits = PUInt{6},2,6 # _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,ps),shift,bits))    
 end
 
 function getpropertyV3(ps, ::Val{:i2})
-    convert(PInt{8},Val(8),Val(8),reinterpret(UInt64,ps))
+    type,shift,bits = PInt{8},8,8 # _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,ps),shift,bits))    
 end
 
 function getpropertyV3(ps, ::Val{:u16})
-    convert(UInt16,Val(32),Val(16),reinterpret(UInt64,ps))
+    type,shift,bits = UInt16,32,16 # _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,ps),shift,bits))    
 end
 
 function getpropertyV3(ps, ::Val{:i16})
-    convert(Int16,Val(48),Val(16),reinterpret(UInt64,ps))
+    type,shift,bits = Int16,48,16 # _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,ps),shift,bits))    
 end
 
 

@@ -179,13 +179,13 @@ If S is not found, (Nothing,0,0) is returned.
 
 dispatch could (should) generate a constant tuple as method body.
 """
-Base.@pure function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+@inline function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
     shift = 0
-    types = Tuple(T.parameters[2].parameters)
+    types = T.parameters[2].parameters
     syms = T.parameters[1]
     idx = 1
     while idx <= length(syms)
-        type :: DataType = types[idx] # type annotation should be unnecessary - compiler knows structure of T
+        type = types[idx] # type annotation should be unnecessary - compiler knows structure of T
         bits = bitsizeof(type)
         if syms[idx]===s
             return type,shift, bits
@@ -194,16 +194,16 @@ Base.@pure function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTupl
         idx += 1
     end
     # symbol not found - clearly an error. what to do to keep method pure and type-stable?
-    throw(ArgumentError(s))
-    #variant 1: type stable default answer - needs further treatment in caller.
-    return Nothing,0,0 # is dead code if compiler recognizes throw as some form of return
-    #variant 2: throw an exception. Is that type stable?!!
-    #throw(ErrorException("symbol $S not found in $T"))
+    #variant 1: throw an exception. Is that type stable?!!
+    #throw(ArgumentError(s))
+    #variant 2: type stable default answer - needs further treatment in caller.
+    return Nothing,0,0 
+    
 end
 
 
 # first try: a generic, but slow implementation
-Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
+Base.@pure function getpropertyV0(x::PStruct{T},s::Symbol) where T<:NamedTuple
     @inbounds begin
         types = Tuple(T.parameters[2].parameters)  # compiler could infer it is a NTuple{N,DataType}
         syms = T.parameters[1]  # compiler could infer it is a NTuple{N,Symbol}
@@ -211,6 +211,27 @@ Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTupl
         shift = 0
         while idx <= length(syms)
             type = types[idx]
+            bits = bitsizeof(type)
+            if syms[idx]===s
+                v = _get(reinterpret(UInt64,x),Val(shift),Val(bits))
+                return _convert(type,v)
+            end
+            shift += bits
+            idx += 1
+        end
+        throw(ArgumentError(s))
+    end
+end
+
+
+Base.@pure @inline function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    @inbounds begin
+        shift = 0
+        types = T.parameters[2].parameters
+        syms = T.parameters[1]
+        idx = 1
+        while idx <= length(syms)
+            type = types[idx] 
             bits = bitsizeof(type)
             if syms[idx]===s
                 v = _get(reinterpret(UInt64,x),Val(shift),Val(bits))
