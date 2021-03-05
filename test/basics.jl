@@ -119,6 +119,24 @@ end
 
 
 
+function benchV5(vec::Vector{PS}) where PS <: PStruct
+    sum = 0
+    for ps in vec
+        sum += getpropertyV5(ps, :i1) + getpropertyV5(ps, :i2) +getpropertyV5(ps, :u16) +getpropertyV5(ps, :i16)
+    end
+    sum
+end
+
+function benchV6(vec::Vector{PS}) where PS <: PStruct
+    sum = 0
+    for ps in vec
+        sum += getpropertyV6(ps, Val(:i1)) + getpropertyV6(ps, Val(:i2)) +getpropertyV6(ps, Val(:u16)) +getpropertyV6(ps, Val(:i16))
+    end
+    sum
+end
+
+
+
 
 
 
@@ -142,6 +160,14 @@ println("@btime benchV3(psv): same work, but handcoded getpropertyV3 replacing _
 
 println("@btime benchV4(psv): same work, but handcoded getpropertyV4 with resulting SHIFT and AND operation")
 @btime benchV4($psv)
+
+
+println("@btime benchV5(psv): like V2, but recursive _fielddescr using Base.tuple_type_head and Base.tuple_type_tail in getpropertyV5")
+@btime benchV5($psv)
+
+
+println("@btime benchV6(psv): like V5, but symol wrapped in Val like in V3 and V4 and @inline assertions")
+@btime benchV6($psv)
 
 
 

@@ -59,11 +59,11 @@ return the size of an instance of T in bits
 """
 function bitsizeof end
 
-@Base.pure bitsizeof(::Type{T}) where T = sizeof(T)*8
+bitsizeof(::Type{T}) where T = sizeof(T)*8
 bitsizeof(::Type{PInt{N}}) where N = N
 bitsizeof(::Type{PUInt{N}}) where N = N
 bitsizeof(::Type{Bool}) = 1
-@Base.pure bitsizeof(::Type{T}) where T<: Enum = 8*sizeof(Int) - leading_zeros(Int(typemax(T))-Int(typemin(T)))
+bitsizeof(::Type{T}) where T<: Enum = 8*sizeof(Int) - leading_zeros(Int(typemax(T))-Int(typemin(T)))
 
 Base.fieldnames(::Type{PStruct{T}}) where T = T.parameters[1]
 Base.propertynames(ps::PStruct{T}) where T = fieldnames(PStruct{T})
@@ -109,7 +109,7 @@ This is guaranteed by _convert(UInt64,bits,...).
     return pstruct
 end
 
-@Base.pure function _set(pstruct::UInt64,shift,bits,value::UInt64) 
+function _set(pstruct::UInt64,shift,bits,value::UInt64) 
     v = value & _mask(bits)
     @boundscheck v==value || throw(BoundsError()) # error("Out of bitfield range: $value. shift=$shift bits=$bits")
     pstruct &= !(_mask(bits) << shift) # delete bitfield
@@ -179,7 +179,7 @@ If S is not found, (Nothing,0,0) is returned.
 
 dispatch could (should) generate a constant tuple as method body.
 """
-@Base.pure function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
     shift = 0
     types = T.parameters[2].parameters
     syms = T.parameters[1]
@@ -200,8 +200,15 @@ dispatch could (should) generate a constant tuple as method body.
     # return Nothing,0,0 
 end
 
+# better than getproperty but still slow
+@inline function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = _fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+export getpropertyV2
 
-Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
+
+function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTuple
     @inbounds begin
         shift = 0
         types = T.parameters[2].parameters
@@ -222,12 +229,53 @@ Base.@pure function Base.getproperty(x::PStruct{T},s::Symbol) where T<:NamedTupl
 end
 
 
-# better than getproperty but still slow
-@inline Base.@pure function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
-    type,shift,bits = _fielddescr(PStruct{T},Val(s))
+# modeled analogous to copyto_type_recursive! in https://discourse.julialang.org/t/efficient-reflection-on-structs/55278/50
+
+
+@inline function _fielddescr5(::Type{PStruct{T}},s::Symbol) where T <: NamedTuple
+    _fielddescr5(Tuple{T.parameters[1]...}, T.parameters[2],s,0)
+end
+
+@inline function _fielddescr5(::Type{syms}, ::Type{types},s::Symbol,shift::Int) where {syms <: Tuple, types<:Tuple} 
+    syms===Tuple{} && throw(ArgumentError(s))
+    type = Base.tuple_type_head(types)
+    if s===Base.tuple_type_head(syms)
+        return type, shift, bitsizeof(type)
+    end
+    _fielddescr5(Base.tuple_type_tail(syms),Base.tuple_type_tail(types),s,shift+bitsizeof(type))
+end
+
+@inline function getpropertyV5(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = _fielddescr5(PStruct{T},s)
     return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
 end
-export getpropertyV2
+export getpropertyV5
+
+
+
+@inline function _fielddescr6(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+    _fielddescr6(Tuple{T.parameters[1]...}, T.parameters[2],Val(s),0)
+end
+
+@inline function _fielddescr6(::Type{syms}, ::Type{types},::Val{s},shift::Int) where {syms <: Tuple, types<:Tuple, s} 
+    @inbounds begin
+    syms===Tuple{} && throw(ArgumentError(s))
+    type = Base.tuple_type_head(types)
+    if s===Base.tuple_type_head(syms)
+        return type, shift, bitsizeof(type)
+    end
+    _fielddescr6(Base.tuple_type_tail(syms),Base.tuple_type_tail(types),Val(s),shift+bitsizeof(type))
+end
+end
+
+
+@inline function getpropertyV6(x::PStruct{T},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+    @inbounds begin
+    type,shift,bits = _fielddescr6(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+    end
+end
+export getpropertyV6
 
 
 # first try: constructor setting some fields. TODO redesign using helper methods
