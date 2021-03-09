@@ -130,7 +130,7 @@ end
 function benchV6(vec::Vector{PS}) where PS <: PStruct
     sum = 0
     for ps in vec
-        sum += getpropertyV6(ps, Val(:i1)) + getpropertyV6(ps, Val(:i2)) +getpropertyV6(ps, Val(:u16)) +getpropertyV6(ps, Val(:i16))
+        sum += getpropertyV6(ps, :i1) + getpropertyV6(ps, :i2) +getpropertyV6(ps, :u16) +getpropertyV6(ps, :i16)
     end
     sum
 end

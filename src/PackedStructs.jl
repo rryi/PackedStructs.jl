@@ -277,17 +277,17 @@ end
 
 @inline function _fielddescr6(::Type{syms}, ::Type{types},::Val{s},shift::Int) where {syms <: Tuple, types<:Tuple, s} 
     @inbounds begin
-    syms===Tuple{} && throw(ArgumentError(s))
-    type = Base.tuple_type_head(types)
-    if s===Base.tuple_type_head(syms)
-        return type, shift, bitsizeof(type)
+        syms===Tuple{} && throw(ArgumentError(s))
+        type = Base.tuple_type_head(types)
+        if s===Base.tuple_type_head(syms)
+            return type, shift, bitsizeof(type)
+        end
+        _fielddescr6(Base.tuple_type_tail(syms),Base.tuple_type_tail(types),Val(s),shift+bitsizeof(type))
     end
-    _fielddescr6(Base.tuple_type_tail(syms),Base.tuple_type_tail(types),Val(s),shift+bitsizeof(type))
-end
 end
 
 
-@inline function getpropertyV6(x::PStruct{T},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+@inline function getpropertyV6(x::PStruct{T},s::Symbol) where {T<:NamedTuple} # s isa Symbol
     @inbounds begin
     type,shift,bits = _fielddescr6(PStruct{T},Val(s))
     return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
