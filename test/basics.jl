@@ -135,6 +135,36 @@ function benchV6(vec::Vector{PS}) where PS <: PStruct
     sum
 end
 
+@inline function getpropertyV7(x::PStruct{T},::Val{s}) where {T<:NamedTuple, s}
+    type,shift,bits = __fielddescr(PStruct{T},Val{s})
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+
+function getpropertyV7(ps, ::Val{:u16})
+    reinterpret(UInt64,ps)>>32 & 0xFFFF
+end
+
+function benchV7(vec::Vector{PS}) where PS <: PStruct
+    sum = 0
+    for ps in vec
+        sum += getpropertyV7(ps, Val(:i1)) + getpropertyV7(ps, Val(:i2)) +getpropertyV7(ps, Val(:u16)) +getpropertyV7(ps, Val(:i16))
+    end
+    sum
+end
+
+@inline function getpropertyV8(x::PStruct{T},s::Symbol) where T<:NamedTuple
+    type,shift,bits = __fielddescr(PStruct{T},Val(s))
+    return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
+end
+
+function benchV8(vec::Vector{PS}) where PS <: PStruct
+    sum = 0
+    for ps in vec
+        sum += getpropertyV8(ps, :i1) + getpropertyV8(ps, :i2) +getpropertyV8(ps, :u16) +getpropertyV8(ps, :i16)
+    end
+    sum
+end
+
 
 
 
@@ -166,7 +196,15 @@ println("@btime benchV5(psv): like V2, but recursive _fielddescr using Base.tupl
 @btime benchV5($psv)
 
 
-println("@btime benchV6(psv): like V5, but symol wrapped in Val like in V3 and V4 and @inline assertions")
+println("@btime benchV6(psv): like V5, but symbol wrapped in Val like in V3 and V4 and @inline assertions")
+@btime benchV6($psv)
+
+
+println("@btime benchV7(psv): like V8, but symbol wrapped in Val")
+@btime benchV6($psv)
+
+
+println("@btime benchV8(psv): like V2, but _fielddescr is @generated returning a constant tuple")
 @btime benchV6($psv)
 
 

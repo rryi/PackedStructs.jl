@@ -20,3 +20,8 @@ ps = PS(nv)
 show(ps)
 
 getpropertyV2(ps, :i1)
+
+
+@generated function g(::Val{s}) where s
+    return :(($s,2*$s,3*$s))
+end

@@ -200,6 +200,24 @@ function _fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s is
     # return Nothing,0,0 
 end
 
+
+@generated function __fielddescr(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+    shift = 0
+    types = T.parameters[2].parameters
+    syms = T.parameters[1]
+    idx = 1
+    while idx <= length(syms)
+        type = types[idx]
+        bits = bitsizeof(type)
+        if syms[idx]===s
+            return :(($type,$shift,$bits))
+        end
+        shift += bits
+        idx += 1
+    end
+    throw(ArgumentError(s)) 
+end
+
 # better than getproperty but still slow
 @inline function getpropertyV2(x::PStruct{T},s::Symbol) where T<:NamedTuple
     type,shift,bits = _fielddescr(PStruct{T},Val(s))
