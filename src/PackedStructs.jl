@@ -271,7 +271,7 @@ export getpropertyV5
 
 
 
-@inline function _fielddescr6(::Type{PStruct{T}},::Val{s}) where {T<:NamedTuple,s} # s isa Symbol
+@inline function _fielddescr6(::Type{PStruct{T}},s::Symbol) where {T<:NamedTuple} # s isa Symbol
     _fielddescr6(Tuple{T.parameters[1]...}, T.parameters[2],Val(s),0)
 end
 
@@ -289,7 +289,7 @@ end
 
 @inline function getpropertyV6(x::PStruct{T},s::Symbol) where {T<:NamedTuple} # s isa Symbol
     @inbounds begin
-    type,shift,bits = _fielddescr6(PStruct{T},Val(s))
+    type,shift,bits = _fielddescr6(PStruct{T},s)
     return _convert(type,_get(reinterpret(UInt64,x),shift,bits))
     end
 end
