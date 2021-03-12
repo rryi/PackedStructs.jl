@@ -1,5 +1,7 @@
 # PackedStructs.jl
 
+# deprecated - successor is package BitStructs.jl which seems to be a better name for it.
+
 Julia struct-s packed at bit boundaries into a primitive type.
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://rryi.github.io/PackedStructs.jl/stable)
@@ -15,7 +17,7 @@ Packed structs have two use cases in mind:
  
  * pooling of several method parameters in one PStruct instance, which fits into one machine register variable. This reduces push/pop overheads in method execution and allows to keep more data in registers, improving runtime performance.
 
- # current state: in development, systematic testing to be done.
+ # current state: deprecated - kept only due to references in some julia.discourse discussions
 
  Basic type PStruct is defined, and has working constructors, getters and setters. However actual performance is unsatisfactory. First benchmarks indicate, that the design of bitfields within a machine word variable allows similar performance as conventional struct-s for field access, but current implementation suffers from type reflection overhead. Next develomnent target is to eliminate all reflection overhead at runtime.
 
